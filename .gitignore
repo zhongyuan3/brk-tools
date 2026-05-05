@@ -1,0 +1,12 @@
+*.o
+*.d
+*.out
+
+*.brkfs
+
+*.img
+
+.cache/
+compile_commands.json
+
+.vscode/
