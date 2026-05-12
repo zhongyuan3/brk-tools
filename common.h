@@ -60,6 +60,7 @@ void alloc_dir_inode(struct brkfs_volume *vol, struct brkfs_inode *inode,
 		     uint32_t mode, uint32_t flags);
 void read_inode(struct brkfs_volume *vol, struct brkfs_inode *inode);
 void write_inode(struct brkfs_volume *vol, struct brkfs_inode *inode);
+void inode_touch_atime(struct brkfs_volume *vol, struct brkfs_inode *inode);
 
 uint32_t alloc_data(struct brkfs_volume *vol);
 uint32_t alloc_dir_data(struct brkfs_volume *vol, uint32_t dir_ino, bool first);

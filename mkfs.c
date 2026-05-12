@@ -14,6 +14,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#define BRKFS_MIN_INODE_SIZE 128
+#define BRKFS_MAX_INODE_SIZE 256
+
 static_assert(sizeof(struct brkfs_super_block) == BRKFS_SUPER_SIZE,
 	      "brkfs_super_block must match BRKFS_SUPER_SIZE");
 static_assert(sizeof(struct brkfs_inode) <= BRKFS_MAX_INODE_SIZE,
@@ -125,6 +128,9 @@ static void validate_args(struct mkfs_args *args)
 	if (args->is < BRKFS_MIN_INODE_SIZE ||
 	    args->is > BRKFS_MAX_INODE_SIZE || !is_pow_of_two_z(args->is))
 		die_argf("invalid inode size: %u", args->is);
+	if (args->is < sizeof(struct brkfs_inode))
+		die_argf("inode size %u is too small, need at least %zu",
+			 args->is, sizeof(struct brkfs_inode));
 
 	struct stat st;
 	if (fstat(args->imgfd, &st) < 0)

@@ -10,9 +10,25 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 static const char *prog_name = "unknown";
+
+static void now_time(uint32_t *sec, uint32_t *nsec)
+{
+	struct timespec ts = { 0 };
+
+	if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
+		*sec = (uint32_t)ts.tv_sec;
+		*nsec = (uint32_t)ts.tv_nsec;
+		return;
+	}
+
+	time_t now = time(NULL);
+	*sec = now < 0 ? 0 : (uint32_t)now;
+	*nsec = 0;
+}
 
 void *xmalloc(size_t size)
 {
@@ -175,12 +191,25 @@ static void __alloc_inode(struct brkfs_volume *vol, struct brkfs_inode *inode)
 void alloc_inode(struct brkfs_volume *vol, struct brkfs_inode *inode,
 		 uint32_t mode, uint32_t rdev, uint32_t flags)
 {
+	uint32_t sec;
+	uint32_t nsec;
+
+	now_time(&sec, &nsec);
+
 	inode->i_ino = 0;
 	inode->i_mode = mode;
 	inode->i_rdev = rdev;
 	inode->i_flags = flags;
 	inode->i_nlink = 1;
 	inode->i_size = 0;
+	inode->i_atime = sec;
+	inode->i_atime_nsec = nsec;
+	inode->i_ctime = sec;
+	inode->i_ctime_nsec = nsec;
+	inode->i_mtime = sec;
+	inode->i_mtime_nsec = nsec;
+	inode->i_uid = (uint32_t)getuid();
+	inode->i_gid = (uint32_t)getgid();
 	memset(inode->i_block, 0, sizeof(inode->i_block));
 	__alloc_inode(vol, inode);
 }
@@ -427,11 +456,14 @@ uint32_t dir_lookup(struct brkfs_volume *vol, uint32_t dir_ino,
 {
 	struct brkfs_inode inode = { .i_ino = dir_ino };
 	size_t name_len = strlen(name);
+	uint32_t found = 0;
 
 	read_inode(vol, &inode);
 
-	if (inode.i_size == 0)
+	if (inode.i_size == 0) {
+		inode_touch_atime(vol, &inode);
 		return 0;
+	}
 
 	uint64_t nblks = (uint64_t)inode.i_size / vol->bs;
 	uint8_t *buf = xmalloc(vol->bs);
@@ -456,14 +488,15 @@ uint32_t dir_lookup(struct brkfs_volume *vol, uint32_t dir_ino,
 				continue;
 			if (e->name_len == name_len &&
 			    memcmp(e->name, name, name_len) == 0) {
-				uint32_t found = e->inode;
-				free(buf);
-				return found;
+				found = e->inode;
+				goto done;
 			}
 		}
 	}
+done:
 	free(buf);
-	return 0;
+	inode_touch_atime(vol, &inode);
+	return found;
 }
 
 void read_inode(struct brkfs_volume *vol, struct brkfs_inode *inode)
@@ -497,6 +530,19 @@ void write_inode(struct brkfs_volume *vol, struct brkfs_inode *inode)
 	memcpy(slot, inode, sizeof(*inode));
 	write_block(vol, bno, block);
 	free(block);
+}
+
+void inode_touch_atime(struct brkfs_volume *vol, struct brkfs_inode *inode)
+{
+	uint32_t sec;
+	uint32_t nsec;
+
+	now_time(&sec, &nsec);
+	if (inode->i_atime == sec && inode->i_atime_nsec == nsec)
+		return;
+	inode->i_atime = sec;
+	inode->i_atime_nsec = nsec;
+	write_inode(vol, inode);
 }
 
 uint32_t alloc_dir_data(struct brkfs_volume *vol, uint32_t dir_ino, bool first)
@@ -542,6 +588,9 @@ void alloc_dir_inode(struct brkfs_volume *vol, struct brkfs_inode *inode,
 	inode->i_nlink = 2;
 	inode->i_size = vol->bs; /* directory always takes up one block */
 	inode->i_block[0] = dir_bno;
+	now_time(&inode->i_ctime, &inode->i_ctime_nsec);
+	inode->i_mtime = inode->i_ctime;
+	inode->i_mtime_nsec = inode->i_ctime_nsec;
 	write_inode(vol, inode);
 }
 
@@ -633,6 +682,9 @@ void dir_add_entry(struct brkfs_volume *vol, uint32_t dir_ino, const char *name,
 	if (!add_entry_to_block(vol, buf, name, name_len, type, ino))
 		die_prog("directory entry failed (internal error)");
 	inode.i_size += vol->bs;
+	now_time(&inode.i_ctime, &inode.i_ctime_nsec);
+	inode.i_mtime = inode.i_ctime;
+	inode.i_mtime_nsec = inode.i_ctime_nsec;
 	write_block(vol, bno, buf);
 	free(buf);
 	write_inode(vol, &inode);

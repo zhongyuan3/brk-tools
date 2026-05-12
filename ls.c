@@ -91,7 +91,7 @@ static void parse_args(struct ls_args *a, int argc, char *argv[])
 		die_argf("expected [<path>] <image> (use --help)");
 	}
 
-	a->imgfd = open(a->img, O_RDONLY);
+	a->imgfd = open(a->img, O_RDWR);
 	if (a->imgfd < 0)
 		die_errno("open");
 }
@@ -230,6 +230,7 @@ static void list_dir(struct brkfs_volume *vol, uint32_t dir_ino, bool long_fmt,
 		die_prog("inode %" PRIu32 " is not a directory", dir_ino);
 
 	if (di.i_size == 0) {
+		inode_touch_atime(vol, &di);
 		if (long_fmt)
 			printf("total 0\n");
 		return;
@@ -310,6 +311,7 @@ static void list_dir(struct brkfs_volume *vol, uint32_t dir_ino, bool long_fmt,
 	}
 
 	free(ents);
+	inode_touch_atime(vol, &di);
 }
 
 int main(int argc, char *argv[])

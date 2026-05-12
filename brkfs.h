@@ -47,6 +47,14 @@ struct brkfs_inode {
 	uint32_t i_flags;
 	uint32_t i_nlink;
 	uint32_t i_size;
+	uint32_t i_atime;
+	uint32_t i_atime_nsec;
+	uint32_t i_ctime;
+	uint32_t i_ctime_nsec;
+	uint32_t i_mtime;
+	uint32_t i_mtime_nsec;
+	uint32_t i_uid;
+	uint32_t i_gid;
 	uint32_t i_block[BRKFS_BLOCKS];
 };
 
@@ -55,10 +63,7 @@ struct brkfs_dir_entry {
 	uint16_t entry_len;
 	uint8_t name_len;
 	uint8_t file_type;
-	char name[];
+	char name[BRKFS_NAME_LEN];
 };
-
-#define BRKFS_MIN_INODE_SIZE 64
-#define BRKFS_MAX_INODE_SIZE 256
 
 #endif

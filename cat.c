@@ -55,7 +55,7 @@ static void parse_args(struct cat_args *a, int argc, char *argv[])
 	a->path = argv[i];
 	a->img = argv[i + 1];
 
-	a->imgfd = open(a->img, O_RDONLY);
+	a->imgfd = open(a->img, O_RDWR);
 	if (a->imgfd < 0)
 		die_errno("open");
 }
@@ -175,8 +175,10 @@ static void cat_file(struct brkfs_volume *vol, uint32_t ino)
 	read_inode(vol, &inode);
 	sz = inode.i_size;
 
-	if (sz == 0)
+	if (sz == 0) {
+		inode_touch_atime(vol, &inode);
 		return;
+	}
 
 	uint32_t nblks = div_round_up_u32(sz, vol->bs);
 	uint8_t *blockbuf = xmalloc(vol->bs);
@@ -200,6 +202,7 @@ static void cat_file(struct brkfs_volume *vol, uint32_t ino)
 	}
 
 	free(blockbuf);
+	inode_touch_atime(vol, &inode);
 
 	if (fflush(stdout) != 0)
 		die_errno("fflush");
