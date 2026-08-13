@@ -12,11 +12,10 @@
 #include <unistd.h>
 
 #define LS_PROG "ls.brkfs"
-#define LS_PATH_MAX 4096
 
 struct ls_args {
 	const char *path;
-	const char *img;
+	const char *image;
 	bool long_fmt;
 	bool all;
 	int imgfd;
@@ -45,7 +44,7 @@ static noreturn void print_help(int exit_code)
 static void parse_args(struct ls_args *a, int argc, char *argv[])
 {
 	a->path = "/";
-	a->img = NULL;
+	a->image = NULL;
 	a->long_fmt = false;
 	a->all = false;
 	a->imgfd = -1;
@@ -75,104 +74,25 @@ static void parse_args(struct ls_args *a, int argc, char *argv[])
 				else if (*p == 'a')
 					a->all = true;
 				else
-					die_argf("unknown option: %s", argv[i]);
+					die_arg("unknown option: %s", argv[i]);
 			}
 			continue;
 		}
-		die_argf("unknown option: %s", argv[i]);
+		die_arg("unknown option: %s", argv[i]);
 	}
 
 	if (argc - i == 1) {
-		a->img = argv[i];
+		a->image = argv[i];
 	} else if (argc - i == 2) {
 		a->path = argv[i];
-		a->img = argv[i + 1];
+		a->image = argv[i + 1];
 	} else {
-		die_argf("expected [<path>] <image> (use --help)");
+		die_arg("expected [<path>] <image> (use --help)");
 	}
 
-	a->imgfd = open(a->img, O_RDWR);
+	a->imgfd = open(a->image, O_RDWR);
 	if (a->imgfd < 0)
 		die_errno("open");
-}
-
-static void init_volume(int imgfd, struct brkfs_volume *vol)
-{
-	struct brkfs_super_block sb;
-
-	read_super(imgfd, &sb);
-
-	if (sb.s_magic != BRKFS_MAGIC)
-		die_prog("invalid super block magic number");
-
-	vol->imgfd = imgfd;
-	vol->bs = sb.s_blocksize;
-	vol->is = sb.s_inode_size;
-	vol->blocks = sb.s_blocks_count;
-	vol->inodes = sb.s_inodes_count;
-
-	uint32_t bits_per_block = vol->bs * 8;
-	uint32_t i_per_block = vol->bs / vol->is;
-
-	vol->ibmap_bno = sb.s_inode_bitmap;
-	vol->ibmap_blocks = div_round_up_u32(sb.s_inodes_count, bits_per_block);
-	vol->ibmap_bits = sb.s_inodes_count;
-	vol->dbmap_bno = sb.s_data_block_bitmap;
-	vol->dbmap_blocks =
-		div_round_up_u32(sb.s_data_blocks_count, bits_per_block);
-	vol->dbmap_bits = sb.s_data_blocks_count;
-	vol->itable_bno = sb.s_inode_table;
-	vol->itable_blocks = div_round_up_u32(sb.s_inodes_count, i_per_block);
-	vol->dfirst_bno = sb.s_first_data_block;
-	vol->dblocks = sb.s_data_blocks_count;
-}
-
-static bool inode_is_dir(struct brkfs_volume *vol, uint32_t ino)
-{
-	struct brkfs_inode inode = { .i_ino = ino };
-
-	read_inode(vol, &inode);
-	return (inode.i_mode & S_IFMT) == S_IFDIR;
-}
-
-static uint32_t resolve_dir_path(struct brkfs_volume *vol, const char *path)
-{
-	char buf[LS_PATH_MAX];
-	size_t len = strlen(path);
-
-	if (len >= sizeof(buf))
-		die_prog("path too long");
-
-	if (len == 0)
-		return BRKFS_ROOT_INO;
-
-	memcpy(buf, path, len + 1);
-
-	char *s = buf;
-	while (*s == '/')
-		s++;
-
-	if (*s == '\0')
-		return BRKFS_ROOT_INO;
-
-	char *save = NULL;
-	char *tok = strtok_r(s, "/", &save);
-	uint32_t cur = BRKFS_ROOT_INO;
-
-	for (; tok != NULL; tok = strtok_r(NULL, "/", &save)) {
-		if (strlen(tok) > BRKFS_NAME_LEN)
-			die_prog("path component too long: %s", tok);
-
-		uint32_t ch = dir_lookup(vol, cur, tok);
-
-		if (ch == 0)
-			die_prog("no such file or directory: %s", path);
-		if (!inode_is_dir(vol, ch))
-			die_prog("not a directory: %s", path);
-		cur = ch;
-	}
-
-	return cur;
 }
 
 static void mode_str(char out[11], uint32_t mode)
@@ -219,44 +139,46 @@ static int dent_cmp(const void *ap, const void *bp)
 	return 0;
 }
 
-static void list_dir(struct brkfs_volume *vol, uint32_t dir_ino, bool long_fmt,
+static void list_dir(struct brkfs_ctx *ctx, uint32_t dir_ino, bool long_fmt,
 		     bool all)
 {
 	struct brkfs_inode di = { .i_ino = dir_ino };
 
-	read_inode(vol, &di);
+	read_inode(ctx, &di);
 
 	if ((di.i_mode & S_IFMT) != S_IFDIR)
 		die_prog("inode %" PRIu32 " is not a directory", dir_ino);
 
 	if (di.i_size == 0) {
-		inode_touch_atime(vol, &di);
+		touch_inode_atime(ctx, &di);
 		if (long_fmt)
 			printf("total 0\n");
 		return;
 	}
 
-	uint64_t nblks = (uint64_t)di.i_size / vol->bs;
-	uint8_t *blockbuf = xmalloc(vol->bs);
+	uint64_t nblocks = (uint64_t)di.i_size / ctx->block_size;
+	uint8_t *blockbuf = xmalloc(ctx->block_size);
 	struct ls_dent *ents = NULL;
 	size_t nent = 0;
 	size_t cap = 0;
 
-	for (uint64_t bi = 0; bi < nblks; bi++) {
-		uint32_t bno = inode_lookup_bno(vol, &di, bi);
+	for (uint64_t bi = 0; bi < nblocks; bi++) {
+		uint32_t bno = lookup_inode_bno(ctx, &di, bi);
 
 		if (bno == 0)
 			continue;
 
-		read_block(vol, bno, blockbuf);
+		read_block(ctx, bno, blockbuf);
 		struct brkfs_dir_entry *e = (struct brkfs_dir_entry *)blockbuf;
 		struct brkfs_dir_entry *end =
-			(struct brkfs_dir_entry *)(blockbuf + vol->bs);
-		uint32_t el = vol->bs;
+			(struct brkfs_dir_entry *)(blockbuf + ctx->block_size);
+		uint32_t el = ctx->block_size;
 
 		for (; (uint8_t *)e < (uint8_t *)end;
 		     e = (struct brkfs_dir_entry *)((uint8_t *)e + el)) {
 			el = e->entry_len;
+			if (el == 0)
+				break;
 			if (el < BRKFS_DIR_ENTRY_MIN_LEN)
 				continue;
 			if (e->inode == 0 || e->name_len == 0)
@@ -301,7 +223,7 @@ static void list_dir(struct brkfs_volume *vol, uint32_t dir_ino, bool long_fmt,
 			struct brkfs_inode chi = { .i_ino = d->ino };
 			char mstr[11];
 
-			read_inode(vol, &chi);
+			read_inode(ctx, &chi);
 			mode_str(mstr, chi.i_mode);
 			printf("%8u %s %8u %s\n", d->ino, mstr, chi.i_size,
 			       d->name);
@@ -311,21 +233,27 @@ static void list_dir(struct brkfs_volume *vol, uint32_t dir_ino, bool long_fmt,
 	}
 
 	free(ents);
-	inode_touch_atime(vol, &di);
+	touch_inode_atime(ctx, &di);
 }
 
 int main(int argc, char *argv[])
 {
 	struct ls_args args = { 0 };
-	struct brkfs_volume vol = { 0 };
+	struct brkfs_ctx ctx = { 0 };
+	struct brkfs_path path;
+	uint32_t dir_ino;
 
 	set_prog_name(LS_PROG);
 	parse_args(&args, argc, argv);
-	init_volume(args.imgfd, &vol);
+	open_ctx(args.imgfd, &ctx);
 
-	uint32_t dir_ino = resolve_dir_path(&vol, args.path);
+	dir_ino = resolve_path(&ctx, args.path, 0, &path);
+	if (dir_ino == 0)
+		die_prog("no such file or directory: %s", args.path);
+	if (!path.is_dir)
+		die_prog("not a directory: %s", args.path);
 
-	list_dir(&vol, dir_ino, args.long_fmt, args.all);
+	list_dir(&ctx, dir_ino, args.long_fmt, args.all);
 
 	close(args.imgfd);
 	return EXIT_SUCCESS;

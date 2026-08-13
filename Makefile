@@ -1,6 +1,7 @@
 CFLAGS := -Wall -Wextra -Werror -Wno-unused-parameter
 CFLAGS += -O2
 CFLAGS += -std=gnu11
+CFLAGS += -MMD -MP
 
 MKFS := mkfs.brkfs
 CP := cp.brkfs
@@ -22,6 +23,8 @@ $(CAT): cat.o common.o
 	$(CC) $(CFLAGS) -o $@ $^
 
 clean:
-	rm -f $(MKFS) $(CP) $(LS) $(CAT) *.o
+	rm -f $(MKFS) $(CP) $(LS) $(CAT) *.o *.d
+
+-include $(wildcard *.d)
 
 .PHONY: all clean
