@@ -53,7 +53,7 @@ static void parse_args(struct cat_args *a, int argc, char *argv[])
 	a->path = argv[i];
 	a->image = argv[i + 1];
 
-	a->imgfd = open(a->image, O_RDWR);
+	a->imgfd = open(a->image, O_RDONLY);
 	if (a->imgfd < 0)
 		die_errno("open");
 }
@@ -65,6 +65,9 @@ static void cat_file(struct brkfs_ctx *ctx, uint32_t ino)
 
 	read_inode(ctx, &inode);
 	sz = inode.i_size;
+
+	if ((inode.i_mode & S_IFMT) != S_IFREG)
+		die_prog("not a regular file");
 
 	if (sz == 0) {
 		touch_inode_atime(ctx, &inode);

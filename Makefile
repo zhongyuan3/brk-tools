@@ -5,7 +5,7 @@ CFLAGS += -MMD -MP
 
 BRKFS := brkfs
 
-BRKFS_OBJS := main.o mkfs.o cp.o ls.o cat.o common.o
+BRKFS_OBJS := main.o mkfs.o info.o cp.o ls.o cat.o check.o common.o
 
 all: $(BRKFS)
 

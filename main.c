@@ -14,10 +14,12 @@ static noreturn void print_help(int exit_code)
 		"Commands:\n"
 		"  mkfs   [options] <image>          Format an image\n"
 		"  layout [options] <image>          Show the layout mkfs would create\n"
+		"  info   <image>                    Show the layout of an existing image\n"
 		"  ls     [options] [<path>] <image> List a directory\n"
 		"  cat    <path> <image>             Print a regular file\n"
 		"  cp     [options] <source> <destination> <image>\n"
 		"                                    Copy a host file into an image\n"
+		"  check  [options] <image>          Check inode, block and directory consistency\n"
 		"\n"
 		"Run '" BRKFS_PROG
 		" <command> --help' for command-specific options.\n"
@@ -54,6 +56,10 @@ int main(int argc, char *argv[])
 		set_prog_name(BRKFS_PROG " layout");
 		return cmd_layout(argc - 1, argv + 1);
 	}
+	if (!strcmp(cmd, "info")) {
+		set_prog_name(BRKFS_PROG " info");
+		return cmd_info(argc - 1, argv + 1);
+	}
 	if (!strcmp(cmd, "ls")) {
 		set_prog_name(BRKFS_PROG " ls");
 		return cmd_ls(argc - 1, argv + 1);
@@ -65,6 +71,10 @@ int main(int argc, char *argv[])
 	if (!strcmp(cmd, "cp")) {
 		set_prog_name(BRKFS_PROG " cp");
 		return cmd_cp(argc - 1, argv + 1);
+	}
+	if (!strcmp(cmd, "check")) {
+		set_prog_name(BRKFS_PROG " check");
+		return cmd_check(argc - 1, argv + 1);
 	}
 
 	fprintf(stderr, "%s: unknown command: %s\n\n", BRKFS_PROG, cmd);

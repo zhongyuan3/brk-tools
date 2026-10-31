@@ -13,6 +13,20 @@ struct brkfs_ctx {
 	uint32_t inode_size;
 	uint32_t block_count;
 	uint32_t inode_count;
+	uint32_t version;
+	uint32_t features;
+	bool read_only;
+	uint32_t state;
+	uint8_t uuid[16];
+	char label[64];
+	uint32_t free_blocks;
+	uint32_t free_inodes;
+	uint32_t mtime;
+	uint32_t lastcheck;
+	uint32_t mnt_count;
+	uint32_t max_mnt_count;
+	uint32_t backup_super_bno;
+	uint32_t orphan;
 	uint32_t inode_bitmap_bno;
 	uint32_t inode_bitmap_blocks;
 	uint32_t inode_bitmap_bits;
@@ -64,10 +78,14 @@ uint32_t div_round_up_u32(uint32_t num, uint32_t div);
 uint64_t div_round_up_u64(uint64_t num, uint64_t div);
 uint32_t parse_u32_arg(const char *str, const char *what);
 
-void print_layout(struct brkfs_ctx *ctx);
+void print_layout(const struct brkfs_ctx *ctx, const char *title);
+void print_features(uint32_t features);
 
 void write_super(struct brkfs_ctx *ctx, struct brkfs_super_block *sb);
 void read_super(int imgfd, struct brkfs_super_block *sb);
+void read_super_at(int imgfd, struct brkfs_super_block *sb, uint64_t offset);
+bool super_sane(const struct brkfs_super_block *sb);
+void validate_super(const struct brkfs_super_block *sb, uint64_t image_size);
 
 void super_to_ctx(const struct brkfs_super_block *sb, struct brkfs_ctx *ctx);
 void ctx_to_super(const struct brkfs_ctx *ctx, struct brkfs_super_block *sb);
@@ -79,13 +97,14 @@ void write_block(struct brkfs_ctx *ctx, uint32_t bno, void *buf);
 void alloc_inode(struct brkfs_ctx *ctx, struct brkfs_inode *inode,
 		 uint32_t mode, uint32_t rdev, uint32_t flags);
 void alloc_dir_inode(struct brkfs_ctx *ctx, struct brkfs_inode *inode,
-		     uint32_t mode, uint32_t flags);
+		     uint32_t mode, uint32_t parent_ino, uint32_t flags);
+uint32_t alloc_dir_data(struct brkfs_ctx *ctx, uint32_t dir_ino,
+			uint32_t parent_ino, bool first);
 void read_inode(struct brkfs_ctx *ctx, struct brkfs_inode *inode);
 void write_inode(struct brkfs_ctx *ctx, struct brkfs_inode *inode);
 void touch_inode_atime(struct brkfs_ctx *ctx, struct brkfs_inode *inode);
 
 uint32_t alloc_data(struct brkfs_ctx *ctx);
-uint32_t alloc_dir_data(struct brkfs_ctx *ctx, uint32_t dir_ino, bool first);
 
 void add_dir_entry(struct brkfs_ctx *ctx, uint32_t dir_ino, const char *name,
 		   uint8_t type, uint32_t ino);
@@ -97,7 +116,8 @@ uint32_t lookup_inode_bno(struct brkfs_ctx *ctx,
 			  const struct brkfs_inode *inode, uint64_t file_blk);
 void assign_inode_bno(struct brkfs_ctx *ctx, struct brkfs_inode *inode,
 		      uint64_t file_blk, uint32_t data_bno);
-uint64_t max_inode_file_bytes(struct brkfs_ctx *ctx);
+uint64_t max_inode_file_blocks(const struct brkfs_ctx *ctx);
+uint64_t max_inode_file_bytes(const struct brkfs_ctx *ctx);
 
 bool is_inode_dir(struct brkfs_ctx *ctx, uint32_t ino);
 uint32_t resolve_path(struct brkfs_ctx *ctx, const char *path, unsigned flags,

@@ -90,7 +90,7 @@ static void parse_args(struct ls_args *a, int argc, char *argv[])
 		die_arg("expected [<path>] <image> (use --help)");
 	}
 
-	a->imgfd = open(a->image, O_RDWR);
+	a->imgfd = open(a->image, O_RDONLY);
 	if (a->imgfd < 0)
 		die_errno("open");
 }
