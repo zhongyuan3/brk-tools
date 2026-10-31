@@ -1,4 +1,5 @@
 #include "brkfs.h"
+#include "commands.h"
 #include "common.h"
 #include <fcntl.h>
 #include <inttypes.h>
@@ -10,8 +11,6 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
-
-#define LS_PROG "ls.brkfs"
 
 struct ls_args {
 	const char *path;
@@ -30,14 +29,15 @@ struct ls_dent {
 static noreturn void print_help(int exit_code)
 {
 	fprintf(stderr,
-		"Usage: " LS_PROG " [options] [<path>] <image>\n\n"
+		"Usage: %s [options] [<path>] <image>\n\n"
 		"List a directory inside a brkfs image.\n\n"
 		"If <path> is omitted, lists the root directory (/).\n\n"
 		"Options:\n"
 		"  -l          Long listing (inode, mode, size, name)\n"
 		"  -a          Include '.' and '..'\n"
 		"  -la, -al    Same as -l -a\n"
-		"      --help  Show this help and exit\n");
+		"      --help  Show this help and exit\n",
+		get_prog_name());
 	exit(exit_code);
 }
 
@@ -156,7 +156,7 @@ static void list_dir(struct brkfs_ctx *ctx, uint32_t dir_ino, bool long_fmt,
 		return;
 	}
 
-	uint64_t nblocks = (uint64_t)di.i_size / ctx->block_size;
+	uint64_t nblocks = div_round_up_u64(di.i_size, ctx->block_size);
 	uint8_t *blockbuf = xmalloc(ctx->block_size);
 	struct ls_dent *ents = NULL;
 	size_t nent = 0;
@@ -236,14 +236,13 @@ static void list_dir(struct brkfs_ctx *ctx, uint32_t dir_ino, bool long_fmt,
 	touch_inode_atime(ctx, &di);
 }
 
-int main(int argc, char *argv[])
+int cmd_ls(int argc, char *argv[])
 {
 	struct ls_args args = { 0 };
 	struct brkfs_ctx ctx = { 0 };
 	struct brkfs_path path;
 	uint32_t dir_ino;
 
-	set_prog_name(LS_PROG);
 	parse_args(&args, argc, argv);
 	open_ctx(args.imgfd, &ctx);
 

@@ -1,4 +1,5 @@
 #include "brkfs.h"
+#include "commands.h"
 #include "common.h"
 #include <fcntl.h>
 #include <inttypes.h>
@@ -9,8 +10,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#define CAT_PROG "cat.brkfs"
-
 struct cat_args {
 	const char *path;
 	const char *image;
@@ -20,11 +19,12 @@ struct cat_args {
 static noreturn void print_help(int exit_code)
 {
 	fprintf(stderr,
-		"Usage: " CAT_PROG " [options] <path> <image>\n\n"
+		"Usage: %s [options] <path> <image>\n\n"
 		"Print the contents of a regular file inside a brkfs image "
 		"to standard output.\n\n"
 		"Options:\n"
-		"      --help  Show this help and exit\n");
+		"      --help  Show this help and exit\n",
+		get_prog_name());
 	exit(exit_code);
 }
 
@@ -71,7 +71,7 @@ static void cat_file(struct brkfs_ctx *ctx, uint32_t ino)
 		return;
 	}
 
-	uint32_t nblocks = div_round_up_u32(sz, ctx->block_size);
+	uint32_t nblocks = (uint32_t)div_round_up_u64(sz, ctx->block_size);
 	uint8_t *blockbuf = xmalloc(ctx->block_size);
 
 	for (uint32_t i = 0; i < nblocks; i++) {
@@ -99,14 +99,13 @@ static void cat_file(struct brkfs_ctx *ctx, uint32_t ino)
 		die_errno("fflush");
 }
 
-int main(int argc, char *argv[])
+int cmd_cat(int argc, char *argv[])
 {
 	struct cat_args args = { 0 };
 	struct brkfs_ctx ctx = { 0 };
 	struct brkfs_path path;
 	uint32_t ino;
 
-	set_prog_name(CAT_PROG);
 	parse_args(&args, argc, argv);
 	open_ctx(args.imgfd, &ctx);
 

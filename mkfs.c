@@ -1,15 +1,16 @@
 #include "brkfs.h"
+#include "commands.h"
 #include "common.h"
 #include <assert.h>
 #include <fcntl.h>
 #include <inttypes.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdnoreturn.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <unistd.h>
 
 #define MKFS_MIN_INODE_SIZE 128
 #define MKFS_MAX_INODE_SIZE 256
@@ -26,7 +27,10 @@ static_assert(sizeof(struct brkfs_inode) <= MKFS_MAX_INODE_SIZE,
 #define MKFS_DEFAULT_INODE_SIZE MKFS_MIN_INODE_SIZE
 #define MKFS_DEFAULT_INODES_COUNT 256
 
-#define MKFS_PROG "mkfs.brkfs"
+enum tool_mode {
+	TOOL_MKFS,
+	TOOL_LAYOUT,
+};
 
 struct mkfs_args {
 	const char *image;
@@ -35,44 +39,48 @@ struct mkfs_args {
 	uint32_t block_count;
 	uint32_t inode_count;
 	int imgfd;
-	bool layout;
 };
 
-static noreturn void print_help(int exit_code)
+static noreturn void print_help(enum tool_mode mode, int exit_code)
 {
+	const char *what = mode == TOOL_LAYOUT ?
+				   "Show the layout mkfs would create "
+				   "without modifying the image." :
+				   "Format an image as a brkfs filesystem.";
+
 	fprintf(stderr,
-		"Usage: " MKFS_PROG " [options] <image>\n\n"
+		"Usage: %s [options] <image>\n\n"
+		"%s\n\n"
 		"Options:\n"
 		"\t-bs <size>      Block size (at least %d bytes, must be a multiple of %d, maximum %d bytes)\n"
 		"\t--count <count> Blocks count\n"
 		"\t-I <count>      Inodes count\n"
 		"\t-i <size>       Inode size (at least %d bytes, must be power of 2, maximum %d bytes)\n"
-		"\t--layout        Show the layout after device is formatted and exit (no action is taken)\n"
 		"\t--help          Show this help message and exit\n"
 		"\t--version       Show version information and exit\n",
-		MKFS_MIN_BLOCK_SIZE, MKFS_MIN_BLOCK_SIZE, MKFS_MAX_BLOCK_SIZE,
-		MKFS_MIN_INODE_SIZE, MKFS_MAX_INODE_SIZE);
+		get_prog_name(), what, MKFS_MIN_BLOCK_SIZE, MKFS_MIN_BLOCK_SIZE,
+		MKFS_MAX_BLOCK_SIZE, MKFS_MIN_INODE_SIZE, MKFS_MAX_INODE_SIZE);
 	exit(exit_code);
 }
 
 static noreturn void print_version(void)
 {
-	printf(MKFS_PROG " 0.0.1\n");
+	printf("%s %s\n", get_prog_name(), BRKFS_VERSION);
 	exit(EXIT_SUCCESS);
 }
 
-static void parse_args(struct mkfs_args *args, int argc, char *argv[])
+static void parse_args(struct mkfs_args *args, int argc, char *argv[],
+		       enum tool_mode mode, int open_flags)
 {
 	args->block_size = MKFS_DEFAULT_BLOCK_SIZE;
 	args->inode_size = MKFS_DEFAULT_INODE_SIZE;
 	args->block_count = 0;
 	args->inode_count = MKFS_DEFAULT_INODES_COUNT;
-	args->layout = false;
 	args->image = NULL;
 	args->imgfd = -1;
 
 	if (argc < 2)
-		print_help(EXIT_FAILURE);
+		print_help(mode, EXIT_FAILURE);
 
 	int i = 1;
 
@@ -80,7 +88,7 @@ static void parse_args(struct mkfs_args *args, int argc, char *argv[])
 		if (argv[i][0] != '-') {
 			break;
 		} else if (!strcmp(argv[i], "--help")) {
-			print_help(EXIT_SUCCESS);
+			print_help(mode, EXIT_SUCCESS);
 		} else if (!strcmp(argv[i], "--version")) {
 			print_version();
 		} else if (!strcmp(argv[i], "-bs")) {
@@ -103,8 +111,6 @@ static void parse_args(struct mkfs_args *args, int argc, char *argv[])
 				die_arg("missing size for -i");
 			args->inode_size =
 				parse_u32_arg(argv[++i], "inode size");
-		} else if (!strcmp(argv[i], "--layout")) {
-			args->layout = true;
 		} else {
 			die_arg("unknown option: %s", argv[i]);
 		}
@@ -115,7 +121,7 @@ static void parse_args(struct mkfs_args *args, int argc, char *argv[])
 
 	args->image = argv[i++];
 
-	args->imgfd = open(args->image, O_RDWR);
+	args->imgfd = open(args->image, open_flags);
 	if (args->imgfd < 0)
 		die_errno("open");
 }
@@ -134,6 +140,9 @@ static void validate_args(struct mkfs_args *args)
 	if (args->inode_size < sizeof(struct brkfs_inode))
 		die_arg("inode size %u is too small, need at least %zu",
 			args->inode_size, sizeof(struct brkfs_inode));
+
+	if (args->inode_count == 0)
+		die_arg("invalid inode count: 0");
 
 	struct stat st;
 	if (fstat(args->imgfd, &st) < 0)
@@ -211,22 +220,34 @@ static void init_ctx(struct mkfs_args *args, struct brkfs_ctx *ctx)
 	ctx->data_block_count = data_block_count;
 }
 
-int main(int argc, char *argv[])
+static void clear_metadata(struct brkfs_ctx *ctx)
+{
+	uint32_t start = ctx->inode_bitmap_bno;
+	uint32_t end = ctx->inode_table_bno + ctx->inode_table_blocks;
+	uint8_t *zero = xmalloc(ctx->block_size);
+
+	memset(zero, 0, ctx->block_size);
+	for (uint32_t bno = start; bno < end; bno++)
+		write_block(ctx, bno, zero);
+	free(zero);
+}
+
+int cmd_mkfs(int argc, char *argv[])
 {
 	struct mkfs_args args = { 0 };
 	struct brkfs_ctx ctx = { 0 };
 	struct brkfs_super_block sb = { 0 };
 
-	set_prog_name(MKFS_PROG);
-
-	parse_args(&args, argc, argv);
+	parse_args(&args, argc, argv, TOOL_MKFS, O_RDWR);
 	validate_args(&args);
 	init_ctx(&args, &ctx);
 
-	if (args.layout) {
-		print_layout(&ctx);
-		return EXIT_SUCCESS;
-	}
+	/*
+	 * The image may already contain a filesystem (or arbitrary data), so
+	 * start from a clean slate; otherwise stale allocation bits and inode
+	 * entries leak into the new filesystem.
+	 */
+	clear_metadata(&ctx);
 
 	ctx_to_super(&ctx, &sb);
 	write_super(&ctx, &sb);
@@ -235,6 +256,20 @@ int main(int argc, char *argv[])
 	alloc_dir_inode(&ctx, &inode, 0, 0);
 	if (inode.i_ino != BRKFS_ROOT_INO)
 		die_prog("root inode number is not %u", BRKFS_ROOT_INO);
+
+	return EXIT_SUCCESS;
+}
+
+int cmd_layout(int argc, char *argv[])
+{
+	struct mkfs_args args = { 0 };
+	struct brkfs_ctx ctx = { 0 };
+
+	parse_args(&args, argc, argv, TOOL_LAYOUT, O_RDONLY);
+	validate_args(&args);
+	init_ctx(&args, &ctx);
+	print_layout(&ctx);
+	close(args.imgfd);
 
 	return EXIT_SUCCESS;
 }

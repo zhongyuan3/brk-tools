@@ -4,6 +4,8 @@
 
 *.brkfs
 
+/brkfs
+
 *.img
 
 .cache/

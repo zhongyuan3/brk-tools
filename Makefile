@@ -3,27 +3,17 @@ CFLAGS += -O2
 CFLAGS += -std=gnu11
 CFLAGS += -MMD -MP
 
-MKFS := mkfs.brkfs
-CP := cp.brkfs
-LS := ls.brkfs
-CAT := cat.brkfs
+BRKFS := brkfs
 
-all: $(MKFS) $(CP) $(LS) $(CAT)
+BRKFS_OBJS := main.o mkfs.o cp.o ls.o cat.o common.o
 
-$(MKFS): mkfs.o common.o
-	$(CC) $(CFLAGS) -o $@ $^
+all: $(BRKFS)
 
-$(CP): cp.o common.o
-	$(CC) $(CFLAGS) -o $@ $^
-
-$(LS): ls.o common.o
-	$(CC) $(CFLAGS) -o $@ $^
-
-$(CAT): cat.o common.o
+$(BRKFS): $(BRKFS_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
 clean:
-	rm -f $(MKFS) $(CP) $(LS) $(CAT) *.o *.d
+	rm -f $(BRKFS) mkfs.brkfs cp.brkfs ls.brkfs cat.brkfs *.o *.d
 
 -include $(wildcard *.d)
 

@@ -27,6 +27,8 @@ struct brkfs_ctx {
 	uint32_t data_block_count;
 };
 
+#define BRKFS_VERSION "0.0.1"
+
 #define BRKFS_PATH_MAX 4096
 
 #define BRKFS_PATH_CREATE_PARENTS (1u << 0)
@@ -59,6 +61,7 @@ const char *get_prog_name(void);
 
 bool is_pow_of_two(uint32_t value);
 uint32_t div_round_up_u32(uint32_t num, uint32_t div);
+uint64_t div_round_up_u64(uint64_t num, uint64_t div);
 uint32_t parse_u32_arg(const char *str, const char *what);
 
 void print_layout(struct brkfs_ctx *ctx);

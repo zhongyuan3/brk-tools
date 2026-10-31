@@ -87,6 +87,11 @@ bool is_pow_of_two(uint32_t value)
 
 uint32_t div_round_up_u32(uint32_t num, uint32_t div)
 {
+	return (uint32_t)div_round_up_u64(num, div);
+}
+
+uint64_t div_round_up_u64(uint64_t num, uint64_t div)
+{
 	return (num + div - 1) / div;
 }
 
@@ -352,92 +357,71 @@ uint64_t max_inode_file_bytes(struct brkfs_ctx *ctx)
 	return bytes;
 }
 
-uint32_t lookup_inode_bno(struct brkfs_ctx *ctx,
-			  const struct brkfs_inode *inode, uint64_t file_blk)
+/*
+ * Decompose a logical file block into the indirect path that indexes it.
+ * Return 0 for a direct block, or the number of indirect levels (1..3).
+ * idx[] receives the per-level indices, starting at the inode's indirect
+ * root and ending at the leaf pointer for the data block.
+ */
+static unsigned inode_block_path(struct brkfs_ctx *ctx, uint64_t file_blk,
+				 uint32_t idx[3])
 {
-	uint32_t n = pointers_per_block(ctx);
-	uint64_t max_blocks = max_inode_file_blocks(ctx);
-
-	if (file_blk >= max_blocks)
-		die_prog("file block index out of range: %" PRIu64, file_blk);
+	uint64_t n = pointers_per_block(ctx);
+	uint64_t u;
 
 	if (file_blk < BRKFS_DIRECT_BLOCKS)
-		return inode->i_block[file_blk];
+		return 0;
 
-	uint64_t u = file_blk - BRKFS_DIRECT_BLOCKS;
-
-	if (u < (uint64_t)n) {
-		uint32_t ib = inode->i_block[BRKFS_INDIRECT_BLOCK];
-
-		if (ib == 0)
-			return 0;
-		uint8_t *buf = xmalloc(ctx->block_size);
-
-		read_block(ctx, ib, buf);
-		uint32_t r = ((uint32_t *)buf)[u];
-		free(buf);
-		return r;
+	u = file_blk - BRKFS_DIRECT_BLOCKS;
+	if (u < n) {
+		idx[0] = (uint32_t)u;
+		return 1;
 	}
 	u -= n;
 
-	if (u < (uint64_t)n * n) {
-		uint32_t dib = inode->i_block[BRKFS_DOUBLE_INDIRECT_BLOCK];
-
-		if (dib == 0)
-			return 0;
-		uint32_t r1 = (uint32_t)(u / n);
-		uint32_t r2 = (uint32_t)(u % n);
-		uint8_t *b0 = xmalloc(ctx->block_size);
-
-		read_block(ctx, dib, b0);
-		uint32_t l1 = ((uint32_t *)b0)[r1];
-
-		free(b0);
-		if (l1 == 0)
-			return 0;
-		uint8_t *b1 = xmalloc(ctx->block_size);
-
-		read_block(ctx, l1, b1);
-		uint32_t r = ((uint32_t *)b1)[r2];
-		free(b1);
-		return r;
+	if (u < n * n) {
+		idx[0] = (uint32_t)(u / n);
+		idx[1] = (uint32_t)(u % n);
+		return 2;
 	}
-	u -= (uint64_t)n * n;
+	u -= n * n;
 
-	if (u < (uint64_t)n * n * n) {
-		uint32_t tib = inode->i_block[BRKFS_TRIPLE_INDIRECT_BLOCK];
-
-		if (tib == 0)
-			return 0;
-		uint32_t r1 = (uint32_t)(u / ((uint64_t)n * n));
-		uint32_t r2 = (uint32_t)((u / n) % n);
-		uint32_t r3 = (uint32_t)(u % n);
-		uint8_t *b0 = xmalloc(ctx->block_size);
-
-		read_block(ctx, tib, b0);
-		uint32_t l1 = ((uint32_t *)b0)[r1];
-
-		free(b0);
-		if (l1 == 0)
-			return 0;
-		uint8_t *b1 = xmalloc(ctx->block_size);
-
-		read_block(ctx, l1, b1);
-		uint32_t l2 = ((uint32_t *)b1)[r2];
-
-		free(b1);
-		if (l2 == 0)
-			return 0;
-		uint8_t *b2 = xmalloc(ctx->block_size);
-
-		read_block(ctx, l2, b2);
-		uint32_t r = ((uint32_t *)b2)[r3];
-		free(b2);
-		return r;
+	if (u < n * n * n) {
+		idx[0] = (uint32_t)(u / (n * n));
+		idx[1] = (uint32_t)((u / n) % n);
+		idx[2] = (uint32_t)(u % n);
+		return 3;
 	}
 
-	die_prog("internal: lookup_inode_bno past triple");
-	return 0;
+	die_prog("file block index out of range: %" PRIu64, file_blk);
+}
+
+uint32_t lookup_inode_bno(struct brkfs_ctx *ctx,
+			  const struct brkfs_inode *inode, uint64_t file_blk)
+{
+	uint32_t idx[3];
+	unsigned levels = inode_block_path(ctx, file_blk, idx);
+	uint32_t bno;
+	uint8_t *buf;
+
+	if (levels == 0)
+		return inode->i_block[file_blk];
+
+	bno = inode->i_block[BRKFS_INDIRECT_BLOCK + levels - 1];
+	if (bno == 0)
+		return 0;
+
+	buf = xmalloc(ctx->block_size);
+
+	for (unsigned level = 0; level < levels; level++) {
+		read_block(ctx, bno, buf);
+		bno = ((uint32_t *)buf)[idx[level]];
+		if (bno == 0)
+			break;
+	}
+
+	free(buf);
+	return bno;
 }
 
 static void ensure_indirect_root(struct brkfs_ctx *ctx,
@@ -458,102 +442,50 @@ static void ensure_indirect_root(struct brkfs_ctx *ctx,
 void assign_inode_bno(struct brkfs_ctx *ctx, struct brkfs_inode *inode,
 		      uint64_t file_blk, uint32_t data_bno)
 {
-	uint32_t n = pointers_per_block(ctx);
-	uint64_t max_blocks = max_inode_file_blocks(ctx);
+	uint32_t idx[3];
+	unsigned levels = inode_block_path(ctx, file_blk, idx);
+	uint8_t *buf;
+	uint8_t *zero = NULL;
+	uint32_t bno;
 
-	if (file_blk >= max_blocks)
-		die_prog("file block index out of range: %" PRIu64, file_blk);
-
-	if (file_blk < BRKFS_DIRECT_BLOCKS) {
+	if (levels == 0) {
 		inode->i_block[file_blk] = data_bno;
 		return;
 	}
 
-	uint64_t u = file_blk - BRKFS_DIRECT_BLOCKS;
+	ensure_indirect_root(ctx, inode, BRKFS_INDIRECT_BLOCK + levels - 1);
+	bno = inode->i_block[BRKFS_INDIRECT_BLOCK + levels - 1];
 
-	if (u < (uint64_t)n) {
-		ensure_indirect_root(ctx, inode, BRKFS_INDIRECT_BLOCK);
-		uint32_t ib = inode->i_block[BRKFS_INDIRECT_BLOCK];
-		uint8_t *buf = xmalloc(ctx->block_size);
+	buf = xmalloc(ctx->block_size);
 
-		read_block(ctx, ib, buf);
-		((uint32_t *)buf)[u] = data_bno;
-		write_block(ctx, ib, buf);
-		free(buf);
-		return;
-	}
-	u -= n;
+	for (unsigned level = 0; level < levels; level++) {
+		uint32_t *ptrs;
 
-	if (u < (uint64_t)n * n) {
-		ensure_indirect_root(ctx, inode, BRKFS_DOUBLE_INDIRECT_BLOCK);
-		uint32_t dib = inode->i_block[BRKFS_DOUBLE_INDIRECT_BLOCK];
-		uint32_t r1 = (uint32_t)(u / n);
-		uint32_t r2 = (uint32_t)(u % n);
-		uint8_t *b0 = xmalloc(ctx->block_size);
-		uint8_t *b1 = xmalloc(ctx->block_size);
+		read_block(ctx, bno, buf);
+		ptrs = (uint32_t *)buf;
 
-		read_block(ctx, dib, b0);
-		uint32_t *p0 = (uint32_t *)b0;
-		uint32_t l1 = p0[r1];
-
-		if (l1 == 0) {
-			l1 = alloc_data(ctx);
-			memset(b1, 0, ctx->block_size);
-			write_block(ctx, l1, b1);
-			p0[r1] = l1;
-			write_block(ctx, dib, b0);
+		if (level + 1 == levels) {
+			ptrs[idx[level]] = data_bno;
+			write_block(ctx, bno, buf);
+			break;
 		}
-		read_block(ctx, l1, b1);
-		((uint32_t *)b1)[r2] = data_bno;
-		write_block(ctx, l1, b1);
-		free(b0);
-		free(b1);
-		return;
-	}
-	u -= (uint64_t)n * n;
 
-	if (u < (uint64_t)n * n * n) {
-		ensure_indirect_root(ctx, inode, BRKFS_TRIPLE_INDIRECT_BLOCK);
-		uint32_t tib = inode->i_block[BRKFS_TRIPLE_INDIRECT_BLOCK];
-		uint32_t r1 = (uint32_t)(u / ((uint64_t)n * n));
-		uint32_t r2 = (uint32_t)((u / n) % n);
-		uint32_t r3 = (uint32_t)(u % n);
-		uint8_t *b0 = xmalloc(ctx->block_size);
-		uint8_t *b1 = xmalloc(ctx->block_size);
-		uint8_t *b2 = xmalloc(ctx->block_size);
+		if (ptrs[idx[level]] == 0) {
+			uint32_t child = alloc_data(ctx);
 
-		read_block(ctx, tib, b0);
-		uint32_t *p0 = (uint32_t *)b0;
-		uint32_t l1 = p0[r1];
-
-		if (l1 == 0) {
-			l1 = alloc_data(ctx);
-			memset(b1, 0, ctx->block_size);
-			write_block(ctx, l1, b1);
-			p0[r1] = l1;
-			write_block(ctx, tib, b0);
+			if (zero == NULL) {
+				zero = xmalloc(ctx->block_size);
+				memset(zero, 0, ctx->block_size);
+			}
+			write_block(ctx, child, zero);
+			ptrs[idx[level]] = child;
+			write_block(ctx, bno, buf);
 		}
-		read_block(ctx, l1, b1);
-		uint32_t *p1 = (uint32_t *)b1;
-		uint32_t l2 = p1[r2];
-
-		if (l2 == 0) {
-			l2 = alloc_data(ctx);
-			memset(b2, 0, ctx->block_size);
-			write_block(ctx, l2, b2);
-			p1[r2] = l2;
-			write_block(ctx, l1, b1);
-		}
-		read_block(ctx, l2, b2);
-		((uint32_t *)b2)[r3] = data_bno;
-		write_block(ctx, l2, b2);
-		free(b0);
-		free(b1);
-		free(b2);
-		return;
+		bno = ptrs[idx[level]];
 	}
 
-	die_prog("internal: assign_inode_bno past triple");
+	free(zero);
+	free(buf);
 }
 
 uint32_t lookup_dir_entry(struct brkfs_ctx *ctx, uint32_t dir_ino,
@@ -570,7 +502,7 @@ uint32_t lookup_dir_entry(struct brkfs_ctx *ctx, uint32_t dir_ino,
 		return 0;
 	}
 
-	uint64_t nblocks = (uint64_t)inode.i_size / ctx->block_size;
+	uint64_t nblocks = div_round_up_u64(inode.i_size, ctx->block_size);
 	uint8_t *buf = xmalloc(ctx->block_size);
 
 	for (uint64_t bi = 0; bi < nblocks; bi++) {
@@ -760,7 +692,8 @@ void add_dir_entry(struct brkfs_ctx *ctx, uint32_t dir_ino, const char *name,
 	buf = xmalloc(ctx->block_size);
 
 	if (inode.i_size > 0) {
-		uint64_t nblocks = (uint64_t)inode.i_size / ctx->block_size;
+		uint64_t nblocks =
+			div_round_up_u64(inode.i_size, ctx->block_size);
 
 		for (uint64_t bi = 0; bi < nblocks; bi++) {
 			uint32_t bno = lookup_inode_bno(ctx, &inode, bi);
@@ -777,9 +710,13 @@ void add_dir_entry(struct brkfs_ctx *ctx, uint32_t dir_ino, const char *name,
 		}
 	}
 
-	uint64_t newi =
-		inode.i_size > 0 ? (uint64_t)inode.i_size / ctx->block_size : 0;
-	uint32_t bno = alloc_data(ctx);
+	uint64_t newi = 0;
+	uint32_t bno;
+
+	if (inode.i_size > 0)
+		newi = div_round_up_u64(inode.i_size, ctx->block_size);
+
+	bno = alloc_data(ctx);
 
 	assign_inode_bno(ctx, &inode, newi, bno);
 	memset(buf, 0, ctx->block_size);
@@ -939,6 +876,16 @@ void print_layout(struct brkfs_ctx *ctx)
 	print_row("Inode table", ctx->inode_table_bno, ctx->inode_table_blocks);
 	print_row("Data (file blocks)", ctx->first_data_bno,
 		  ctx->data_block_count);
+
+	printf("\n");
+	printf("  %-26s %10" PRIu32 "\n", "Direct blocks/inode",
+	       (uint32_t)BRKFS_DIRECT_BLOCKS);
+	printf("  %-26s %10" PRIu64 "\n", "Pointers per block",
+	       (uint64_t)pointers_per_block(ctx));
+	printf("  %-26s %10" PRIu64 "\n", "Max blocks/inode",
+	       max_inode_file_blocks(ctx));
+	printf("  %-26s %10" PRIu64 " bytes\n", "Max file size (i_size)",
+	       max_inode_file_bytes(ctx));
 
 	printf("\n");
 	printf("  Last block number: %" PRIu32 "\n\n", last);

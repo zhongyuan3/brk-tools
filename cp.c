@@ -1,4 +1,5 @@
 #include "brkfs.h"
+#include "commands.h"
 #include "common.h"
 #include <dirent.h>
 #include <fcntl.h>
@@ -12,8 +13,6 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define CP_PROG "cp.brkfs"
-
 struct cp_args {
 	const char *src;
 	const char *dst;
@@ -25,12 +24,12 @@ struct cp_args {
 static noreturn void print_help(int exit_code)
 {
 	fprintf(stderr,
-		"Usage: " CP_PROG
-		" [options] <source> <destination> <image>\n\n"
+		"Usage: %s [options] <source> <destination> <image>\n\n"
 		"Copy a single regular file from the host into a brkfs image.\n\n"
 		"Options:\n"
 		"  -r, --recursive   Create missing parent directories on the image\n"
-		"      --help        Show this help and exit\n");
+		"      --help        Show this help and exit\n",
+		get_prog_name());
 	exit(exit_code);
 }
 
@@ -90,22 +89,18 @@ static void copy_host_file(struct brkfs_ctx *ctx, int hostfd,
 	if (sz > max)
 		die_prog("file too large (max %" PRIu64 " bytes)", max);
 
-	if (sz > UINT32_MAX)
-		die_prog("file too large");
-
 	struct brkfs_inode inode = { 0 };
 
 	alloc_inode(ctx, &inode, S_IFREG | 0644, 0, 0);
 
-	uint32_t nblocks = 0;
+	uint64_t nblocks = 0;
 
 	if (sz > 0)
-		nblocks = (uint32_t)((sz + ctx->block_size - 1) /
-				     ctx->block_size);
+		nblocks = div_round_up_u64(sz, ctx->block_size);
 
 	uint64_t off = 0;
 
-	for (uint32_t i = 0; i < nblocks; i++) {
+	for (uint64_t i = 0; i < nblocks; i++) {
 		uint8_t *blockbuf = xmalloc(ctx->block_size);
 		size_t left = (size_t)(sz - off);
 		size_t chunk = left < ctx->block_size ? left : ctx->block_size;
@@ -133,7 +128,7 @@ static void copy_host_file(struct brkfs_ctx *ctx, int hostfd,
 	add_dir_entry(ctx, parent_ino, name, DT_REG, inode.i_ino);
 }
 
-int main(int argc, char *argv[])
+int cmd_cp(int argc, char *argv[])
 {
 	struct cp_args args = { 0 };
 	struct brkfs_ctx ctx = { 0 };
@@ -141,7 +136,6 @@ int main(int argc, char *argv[])
 	int hostfd;
 	uint32_t existing;
 
-	set_prog_name(CP_PROG);
 	parse_args(&args, argc, argv);
 	open_ctx(args.imgfd, &ctx);
 
