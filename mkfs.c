@@ -50,9 +50,10 @@ static noreturn void print_help(enum tool_mode mode, int exit_code)
 		"\t-L <label>      Volume label (at most %d characters)\n"
 		"\t--help          Show this help message and exit\n"
 		"\t--version       Show version information and exit\n",
-		get_prog_name(), what, BRKFS_MIN_BLOCK_SIZE, BRKFS_MIN_BLOCK_SIZE,
-		BRKFS_MAX_BLOCK_SIZE, BRKFS_MIN_INODE_SIZE,
-		BRKFS_MAX_INODE_SIZE, (int)sizeof(((struct mkfs_args *)0)->label) - 1);
+		get_prog_name(), what, BRKFS_MIN_BLOCK_SIZE,
+		BRKFS_MIN_BLOCK_SIZE, BRKFS_MAX_BLOCK_SIZE,
+		BRKFS_MIN_INODE_SIZE, BRKFS_MAX_INODE_SIZE,
+		(int)sizeof(((struct mkfs_args *)0)->label) - 1);
 	exit(exit_code);
 }
 
@@ -105,7 +106,8 @@ static void parse_args(struct mkfs_args *args, int argc, char *argv[],
 				die_arg("missing size for -i");
 			args->inode_size =
 				parse_u32_arg(argv[++i], "inode size");
-		} else if (!strcmp(argv[i], "-L") || !strcmp(argv[i], "--label")) {
+		} else if (!strcmp(argv[i], "-L") ||
+			   !strcmp(argv[i], "--label")) {
 			if (i + 1 >= argc)
 				die_arg("missing label for -L");
 			if (strlen(argv[i + 1]) >= sizeof(args->label))
@@ -171,8 +173,8 @@ static void generate_uuid(uint8_t uuid[16])
 	}
 
 	if (n != 16) {
-		uint64_t seed =
-			(uint64_t)time(NULL) ^ ((uint64_t)getpid() << 32);
+		uint64_t seed = (uint64_t)time(NULL) ^
+				((uint64_t)getpid() << 32);
 
 		for (int i = 0; i < 16; i++) {
 			seed = seed * 6364136223846793005ull + 1;

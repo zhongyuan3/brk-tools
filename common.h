@@ -73,9 +73,21 @@ void *xmalloc(size_t size);
 void set_prog_name(const char *prog_name);
 const char *get_prog_name(void);
 
-bool is_pow_of_two(uint32_t value);
-uint32_t div_round_up_u32(uint32_t num, uint32_t div);
-uint64_t div_round_up_u64(uint64_t num, uint64_t div);
+static inline bool is_pow_of_two(uint32_t value)
+{
+	return value != 0 && (value & (value - 1)) == 0;
+}
+
+static inline uint64_t div_round_up_u64(uint64_t num, uint64_t div)
+{
+	return (num + div - 1) / div;
+}
+
+static inline uint32_t div_round_up_u32(uint32_t num, uint32_t div)
+{
+	return (uint32_t)div_round_up_u64(num, div);
+}
+
 uint32_t parse_u32_arg(const char *str, const char *what);
 
 void print_layout(const struct brkfs_ctx *ctx, const char *title);

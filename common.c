@@ -82,21 +82,6 @@ const char *get_prog_name(void)
 	return prog_name;
 }
 
-bool is_pow_of_two(uint32_t value)
-{
-	return value != 0 && (value & (value - 1)) == 0;
-}
-
-uint32_t div_round_up_u32(uint32_t num, uint32_t div)
-{
-	return (uint32_t)div_round_up_u64(num, div);
-}
-
-uint64_t div_round_up_u64(uint64_t num, uint64_t div)
-{
-	return (num + div - 1) / div;
-}
-
 uint32_t parse_u32_arg(const char *str, const char *what)
 {
 	char *end;
@@ -215,8 +200,7 @@ void validate_super(const struct brkfs_super_block *sb, uint64_t image_size)
 
 	if (copy.s_checksum != brkfs_super_checksum(&copy))
 		die_prog("bad super block checksum");
-	if (sb->s_state < BRKFS_STATE_CLEAN ||
-	    sb->s_state > BRKFS_STATE_ERROR)
+	if (sb->s_state < BRKFS_STATE_CLEAN || sb->s_state > BRKFS_STATE_ERROR)
 		die_prog("invalid super block state: %u", sb->s_state);
 	if (sb->s_free_blocks > sb->s_data_blocks_count)
 		die_prog("invalid free block count: %u", sb->s_free_blocks);
@@ -241,8 +225,7 @@ void validate_super(const struct brkfs_super_block *sb, uint64_t image_size)
 	if (sb->s_blocks_count < 2)
 		die_prog("block count is too small for a backup super block");
 	if (sb->s_backup_super != sb->s_blocks_count - 1)
-		die_prog("invalid backup super block: %u",
-			 sb->s_backup_super);
+		die_prog("invalid backup super block: %u", sb->s_backup_super);
 	if (sb->s_inodes_count == 0)
 		die_prog("invalid inode count in super block");
 	if (sb->s_data_blocks_count == 0)
@@ -375,10 +358,8 @@ void open_ctx(int imgfd, struct brkfs_ctx *ctx)
 				continue;
 			read_super_at(imgfd, &backup,
 				      (uint64_t)st.st_size - bs);
-			if (!super_sane(&backup) ||
-			    backup.s_blocksize != bs ||
-			    backup.s_backup_super !=
-				    backup.s_blocks_count - 1)
+			if (!super_sane(&backup) || backup.s_blocksize != bs ||
+			    backup.s_backup_super != backup.s_blocks_count - 1)
 				continue;
 			sb = backup;
 			found = true;
@@ -969,8 +950,7 @@ void add_dir_entry(struct brkfs_ctx *ctx, uint32_t dir_ino, const char *name,
 			if (add_entry_to_block(ctx, buf, name, name_len, type,
 					       ino)) {
 				write_dir_block(ctx, bno, buf);
-				now_time(&inode.i_ctime,
-					 &inode.i_ctime_nsec);
+				now_time(&inode.i_ctime, &inode.i_ctime_nsec);
 				inode.i_mtime = inode.i_ctime;
 				inode.i_mtime_nsec = inode.i_ctime_nsec;
 				if (type == DT_DIR)
@@ -1089,7 +1069,8 @@ uint32_t resolve_path(struct brkfs_ctx *ctx, const char *path, unsigned flags,
 					}
 					struct brkfs_inode newdir;
 
-					alloc_dir_inode(ctx, &newdir, 0777, cur, 0);
+					alloc_dir_inode(ctx, &newdir, 0777, cur,
+							0);
 					add_dir_entry(ctx, cur, tok, DT_DIR,
 						      newdir.i_ino);
 					cur = newdir.i_ino;

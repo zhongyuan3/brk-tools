@@ -2,7 +2,6 @@
 #include "commands.h"
 #include "common.h"
 #include <dirent.h>
-#include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
 #include <stdarg.h>
@@ -77,8 +76,8 @@ static void bitmap_set(uint8_t *map, uint32_t bit)
 	map[bit >> 3] |= (uint8_t)(1u << (bit & 7));
 }
 
-static void write_bitmap(struct brkfs_ctx *ctx, uint32_t bno,
-			 uint32_t blocks, uint32_t nbits, const uint8_t *map)
+static void write_bitmap(struct brkfs_ctx *ctx, uint32_t bno, uint32_t blocks,
+			 uint32_t nbits, const uint8_t *map)
 {
 	size_t bytes = div_round_up_u32(nbits, 8);
 	uint8_t *block = xmalloc(ctx->block_size);
@@ -162,8 +161,7 @@ static bool mode_type_valid(uint32_t mode)
 	       S_ISSOCK(mode);
 }
 
-static void fix_inode_nlink(struct check_state *s, uint32_t ino,
-			    uint32_t nlink)
+static void fix_inode_nlink(struct check_state *s, uint32_t ino, uint32_t nlink)
 {
 	struct brkfs_inode inode = { .i_ino = ino };
 
@@ -179,7 +177,8 @@ static void mark_block(struct check_state *s, uint32_t ino, uint32_t bno,
 
 	if (bno < s->ctx->first_data_bno ||
 	    bno >= s->ctx->first_data_bno + s->ctx->data_block_count) {
-		check_error(s, "inode %u: %s block %u is outside the data region",
+		check_error(s,
+			    "inode %u: %s block %u is outside the data region",
 			    ino, what, bno);
 		s->tree_valid = false;
 		return;
@@ -187,7 +186,8 @@ static void mark_block(struct check_state *s, uint32_t ino, uint32_t bno,
 
 	bit = bno - s->ctx->first_data_bno;
 	if (bitmap_get(s->used_blocks, bit)) {
-		check_error(s, "inode %u: block %u is referenced more than once",
+		check_error(s,
+			    "inode %u: block %u is referenced more than once",
 			    ino, bno);
 		s->tree_valid = false;
 		return;
@@ -234,16 +234,16 @@ static void scan_inode_blocks(struct check_state *s,
 			      const struct brkfs_inode *inode)
 {
 	struct brkfs_ctx *ctx = s->ctx;
-	uint64_t nblocks =
-		div_round_up_u64(inode->i_size, ctx->block_size);
+	uint64_t nblocks = div_round_up_u64(inode->i_size, ctx->block_size);
 	uint64_t max_blocks = max_inode_file_blocks(ctx);
 	uint32_t ino = inode->i_ino;
 
 	if (S_ISDIR(inode->i_mode)) {
 		if (inode->i_size % ctx->block_size != 0) {
-			check_error(s,
-				    "inode %u: directory size %u is not block-aligned",
-				    ino, inode->i_size);
+			check_error(
+				s,
+				"inode %u: directory size %u is not block-aligned",
+				ino, inode->i_size);
 			s->tree_valid = false;
 		}
 		if (nblocks > BRKFS_DIRECT_BLOCKS)
@@ -283,8 +283,7 @@ static void scan_inode_blocks(struct check_state *s,
 			      inode->i_block[BRKFS_TRIPLE_INDIRECT_BLOCK], 3);
 }
 
-static void name_list_add(struct name_list *list, const char *name,
-			  size_t len)
+static void name_list_add(struct name_list *list, const char *name, size_t len)
 {
 	if (list->count == list->capacity) {
 		list->capacity = list->capacity ? list->capacity * 2 : 32;
@@ -363,15 +362,17 @@ static void check_dir_entries(struct check_state *s, uint32_t dir_ino,
 
 			if (el < BRKFS_DIR_ENTRY_MIN_LEN || el > left ||
 			    (el & 3) != 0) {
-				check_error(s,
-					    "directory %u: invalid entry length %u",
-					    dir_ino, el);
+				check_error(
+					s,
+					"directory %u: invalid entry length %u",
+					dir_ino, el);
 				break;
 			}
 			if ((size_t)e->name_len + 8 > el) {
-				check_error(s,
-					    "directory %u: invalid name length %u",
-					    dir_ino, e->name_len);
+				check_error(
+					s,
+					"directory %u: invalid name length %u",
+					dir_ino, e->name_len);
 				goto next;
 			}
 			if (e->inode == 0)
@@ -379,33 +380,38 @@ static void check_dir_entries(struct check_state *s, uint32_t dir_ino,
 
 			if (memchr(e->name, '\0', e->name_len) != NULL ||
 			    memchr(e->name, '/', e->name_len) != NULL) {
-				check_error(s,
-					    "directory %u: invalid name for inode %u",
-					    dir_ino, e->inode);
+				check_error(
+					s,
+					"directory %u: invalid name for inode %u",
+					dir_ino, e->inode);
 				goto next;
 			}
 			if (e->inode > ctx->inode_count) {
-				check_error(s,
-					    "directory %u: inode %u out of range",
-					    dir_ino, e->inode);
+				check_error(
+					s,
+					"directory %u: inode %u out of range",
+					dir_ino, e->inode);
 				goto next;
 			}
 			if (s->modes[e->inode] == 0) {
-				check_error(s,
-					    "directory %u: entry '%s' points to free inode %u",
-					    dir_ino, e->name, e->inode);
+				check_error(
+					s,
+					"directory %u: entry '%s' points to free inode %u",
+					dir_ino, e->name, e->inode);
 				goto next;
 			}
 			if (e->file_type != mode_to_dt(s->modes[e->inode]))
-				check_error(s,
-					    "directory %u: entry '%s' type does not match inode %u",
-					    dir_ino, e->name, e->inode);
+				check_error(
+					s,
+					"directory %u: entry '%s' type does not match inode %u",
+					dir_ino, e->name, e->inode);
 
 			if (e->name_len == 1 && e->name[0] == '.') {
 				if (have_dot)
-					check_error(s,
-						    "directory %u: duplicate '.' entry",
-						    dir_ino);
+					check_error(
+						s,
+						"directory %u: duplicate '.' entry",
+						dir_ino);
 				have_dot = true;
 				dot_ino = e->inode;
 				goto next;
@@ -413,9 +419,10 @@ static void check_dir_entries(struct check_state *s, uint32_t dir_ino,
 			if (e->name_len == 2 && e->name[0] == '.' &&
 			    e->name[1] == '.') {
 				if (have_dotdot)
-					check_error(s,
-						    "directory %u: duplicate '..' entry",
-						    dir_ino);
+					check_error(
+						s,
+						"directory %u: duplicate '..' entry",
+						dir_ino);
 				have_dotdot = true;
 				s->dotdot_of[dir_ino] = e->inode;
 				goto next;
@@ -426,9 +433,10 @@ static void check_dir_entries(struct check_state *s, uint32_t dir_ino,
 			if (S_ISDIR(s->modes[e->inode])) {
 				if (s->parent_of[e->inode] != 0 &&
 				    s->parent_of[e->inode] != dir_ino)
-					check_error(s,
-						    "directory %u: inode %u has multiple parents",
-						    dir_ino, e->inode);
+					check_error(
+						s,
+						"directory %u: inode %u has multiple parents",
+						dir_ino, e->inode);
 				s->parent_of[e->inode] = dir_ino;
 				if (s->dir_children[dir_ino] != UINT32_MAX)
 					s->dir_children[dir_ino]++;
@@ -468,9 +476,10 @@ static void check_links(struct check_state *s)
 						  s->parent_of[ino];
 
 			if (s->nlinks[ino] != expected) {
-				check_error(s,
-					    "directory %u: nlink %u, expected %u",
-					    ino, s->nlinks[ino], expected);
+				check_error(
+					s,
+					"directory %u: nlink %u, expected %u",
+					ino, s->nlinks[ino], expected);
 				if (s->repair) {
 					fix_inode_nlink(s, ino, expected);
 					s->repaired++;
@@ -481,14 +490,15 @@ static void check_links(struct check_state *s)
 					    "directory %u: no parent directory",
 					    ino);
 			if (s->dotdot_of[ino] != parent)
-				check_error(s,
-					    "directory %u: '..' points to inode %u, expected %u",
-					    ino, s->dotdot_of[ino], parent);
-			if (ino != BRKFS_ROOT_INO &&
-			    s->entry_refs[ino] != 1)
-				check_error(s,
-					    "directory %u: referenced by %u entries",
-					    ino, s->entry_refs[ino]);
+				check_error(
+					s,
+					"directory %u: '..' points to inode %u, expected %u",
+					ino, s->dotdot_of[ino], parent);
+			if (ino != BRKFS_ROOT_INO && s->entry_refs[ino] != 1)
+				check_error(
+					s,
+					"directory %u: referenced by %u entries",
+					ino, s->entry_refs[ino]);
 		} else if (s->nlinks[ino] != s->entry_refs[ino]) {
 			check_error(s, "inode %u: nlink %u, entries %u", ino,
 				    s->nlinks[ino], s->entry_refs[ino]);
@@ -514,11 +524,12 @@ static void check_bitmaps(struct check_state *s)
 		if (used)
 			used_blocks++;
 		if (disk != used) {
-			check_error(s,
-				    "data block %u: bitmap says %s, references say %s",
-				    ctx->first_data_bno + i,
-				    disk ? "allocated" : "free",
-				    used ? "used" : "unused");
+			check_error(
+				s,
+				"data block %u: bitmap says %s, references say %s",
+				ctx->first_data_bno + i,
+				disk ? "allocated" : "free",
+				used ? "used" : "unused");
 			if (s->repair) {
 				s->data_bitmap_dirty = true;
 				s->repaired++;
@@ -559,9 +570,10 @@ static void check_bitmaps(struct check_state *s)
 	}
 
 	if (missing_features != 0) {
-		check_error(s,
-			    "super block is missing feature bits 0x%08x used by inodes",
-			    missing_features);
+		check_error(
+			s,
+			"super block is missing feature bits 0x%08x used by inodes",
+			missing_features);
 		if (s->repair) {
 			ctx->features |= s->used_features;
 			s->super_dirty = true;
@@ -585,17 +597,15 @@ static void check_bitmaps(struct check_state *s)
 
 	if (s->repair) {
 		if (s->inode_bitmap_dirty) {
-			size_t bytes =
-				div_round_up_u32(ctx->inode_count, 8);
+			size_t bytes = div_round_up_u32(ctx->inode_count, 8);
 			uint8_t *map = xcalloc(bytes, 1);
 
-			for (uint32_t ino = 1; ino <= ctx->inode_count;
-			     ino++)
+			for (uint32_t ino = 1; ino <= ctx->inode_count; ino++)
 				if (s->modes[ino] != 0)
 					bitmap_set(map, ino - 1);
 			write_bitmap(ctx, ctx->inode_bitmap_bno,
-				     ctx->inode_bitmap_blocks,
-				     ctx->inode_count, map);
+				     ctx->inode_bitmap_blocks, ctx->inode_count,
+				     map);
 			free(map);
 		}
 
@@ -605,8 +615,8 @@ static void check_bitmaps(struct check_state *s)
 				     ctx->data_block_count, s->used_blocks);
 	}
 
-	uint32_t remaining =
-		s->errors > s->repaired ? s->errors - s->repaired : 0;
+	uint32_t remaining = s->errors > s->repaired ? s->errors - s->repaired :
+						       0;
 
 	if (s->repair && remaining == 0) {
 		ctx->state = BRKFS_STATE_CLEAN;
@@ -653,8 +663,7 @@ static void check_inode_table(struct check_state *s)
 
 			if (ino > ctx->inode_count)
 				break;
-			memcpy(&inode,
-			       block + (size_t)slot * ctx->inode_size,
+			memcpy(&inode, block + (size_t)slot * ctx->inode_size,
 			       sizeof(inode));
 
 			bool disk_alloc = bitmap_get(s->inode_bitmap, ino - 1);
@@ -669,9 +678,10 @@ static void check_inode_table(struct check_state *s)
 			if (recover_ino) {
 				struct brkfs_inode fixed = inode;
 
-				check_error(s,
-					    "inode %u: missing i_ino (recovering)",
-					    ino);
+				check_error(
+					s,
+					"inode %u: missing i_ino (recovering)",
+					ino);
 				fixed.i_ino = ino;
 				write_inode(ctx, &fixed);
 				inode.i_ino = ino;
@@ -690,9 +700,10 @@ static void check_inode_table(struct check_state *s)
 			}
 
 			if (!disk_alloc && looks_alloc) {
-				check_error(s,
-					    "inode %u: allocated in table but free in bitmap",
-					    ino);
+				check_error(
+					s,
+					"inode %u: allocated in table but free in bitmap",
+					ino);
 				if (s->repair) {
 					s->inode_bitmap_dirty = true;
 					s->repaired++;
@@ -703,9 +714,10 @@ static void check_inode_table(struct check_state *s)
 			if (!disk_alloc && !looks_alloc)
 				continue;
 			if (disk_alloc && !looks_alloc) {
-				check_error(s,
-					    "inode %u: allocated in bitmap but invalid in table",
-					    ino);
+				check_error(
+					s,
+					"inode %u: allocated in bitmap but invalid in table",
+					ino);
 				if (s->repair) {
 					s->inode_bitmap_dirty = true;
 					s->repaired++;
@@ -717,11 +729,12 @@ static void check_inode_table(struct check_state *s)
 			s->nlinks[ino] = inode.i_nlink;
 
 			if (inode.i_mode & ~(S_IFMT | 07777))
-				check_error(s,
-					    "inode %u: invalid mode bits 0x%08x",
-					    ino, inode.i_mode);
+				check_error(
+					s, "inode %u: invalid mode bits 0x%08x",
+					ino, inode.i_mode);
 			if (!valid_type)
-				check_error(s, "inode %u: unknown file type", ino);
+				check_error(s, "inode %u: unknown file type",
+					    ino);
 
 			if (s->verbose)
 				printf("  inode %u: mode 0x%08x size %u nlink %u\n",
@@ -774,18 +787,16 @@ int cmd_check(int argc, char *argv[])
 
 	s.ctx = &ctx;
 	s.tree_valid = true;
-	s.inode_bitmap =
-		read_bitmap(&ctx, ctx.inode_bitmap_bno,
-			    ctx.inode_bitmap_blocks, ctx.inode_count);
-	s.data_bitmap =
-		read_bitmap(&ctx, ctx.data_bitmap_bno,
-			    ctx.data_bitmap_blocks, ctx.data_block_count);
+	s.inode_bitmap = read_bitmap(&ctx, ctx.inode_bitmap_bno,
+				     ctx.inode_bitmap_blocks, ctx.inode_count);
+	s.data_bitmap = read_bitmap(&ctx, ctx.data_bitmap_bno,
+				    ctx.data_bitmap_blocks,
+				    ctx.data_block_count);
 	s.used_blocks = xcalloc(div_round_up_u32(ctx.data_block_count, 8), 1);
 	s.modes = xcalloc(ctx.inode_count + 1, sizeof(*s.modes));
 	s.nlinks = xcalloc(ctx.inode_count + 1, sizeof(*s.nlinks));
 	s.entry_refs = xcalloc(ctx.inode_count + 1, sizeof(*s.entry_refs));
-	s.dir_children =
-		xcalloc(ctx.inode_count + 1, sizeof(*s.dir_children));
+	s.dir_children = xcalloc(ctx.inode_count + 1, sizeof(*s.dir_children));
 	s.parent_of = xcalloc(ctx.inode_count + 1, sizeof(*s.parent_of));
 	s.dotdot_of = xcalloc(ctx.inode_count + 1, sizeof(*s.dotdot_of));
 
@@ -816,7 +827,9 @@ int cmd_check(int argc, char *argv[])
 	} else {
 		uint32_t remaining;
 
-		check_error(&s, "skipping directory and bitmap checks due to invalid block references");
+		check_error(
+			&s,
+			"skipping directory and bitmap checks due to invalid block references");
 		remaining = s.errors > s.repaired ? s.errors - s.repaired : 0;
 		printf("brkfs check: %s\n", remaining == 0 ? "OK" : "FAILED");
 		if (s.repair)

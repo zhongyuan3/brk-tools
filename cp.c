@@ -224,15 +224,14 @@ static void copy_dir_children(struct brkfs_ctx *ctx, const char *src,
 			die_errno("stat");
 
 		if (S_ISDIR(st.st_mode))
-			copy_host_dir(ctx, child, dir_ino, entries[i].name,
-				      &st, true);
+			copy_host_dir(ctx, child, dir_ino, entries[i].name, &st,
+				      true);
 		else if (S_ISREG(st.st_mode)) {
 			int fd = open(child, O_RDONLY);
 
 			if (fd < 0)
 				die_errno("open");
-			copy_host_file(ctx, fd, dir_ino, entries[i].name,
-				       &st);
+			copy_host_file(ctx, fd, dir_ino, entries[i].name, &st);
 			close(fd);
 		} else {
 			die_prog("unsupported source type: %s", child);

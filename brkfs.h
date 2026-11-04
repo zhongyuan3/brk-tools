@@ -48,7 +48,7 @@
 #define BRKFS_FEATURE_DOUBLE_INDIRECT (1u << 0)
 #define BRKFS_FEATURE_TRIPLE_INDIRECT (1u << 1)
 #define BRKFS_FEATURE_DIR_INDIRECT (1u << 2)
-#define BRKFS_FEATURE_ALL                                           \
+#define BRKFS_FEATURE_ALL                                                \
 	(BRKFS_FEATURE_DOUBLE_INDIRECT | BRKFS_FEATURE_TRIPLE_INDIRECT | \
 	 BRKFS_FEATURE_DIR_INDIRECT)
 
@@ -119,8 +119,7 @@ _Static_assert(sizeof(struct brkfs_inode) <= BRKFS_MAX_INODE_SIZE,
 	       "brkfs_inode is larger than BRKFS_MAX_INODE_SIZE");
 
 /* CRC32C (Castagnoli), reflected polynomial 0x82f63b78. */
-static inline uint32_t brkfs_crc32c(uint32_t crc, const void *buf,
-				    uint32_t len)
+static inline uint32_t brkfs_crc32c(uint32_t crc, const void *buf, uint32_t len)
 {
 	const uint8_t *p = buf;
 
@@ -161,8 +160,7 @@ static inline bool brkfs_inode_checksum_ok(const struct brkfs_inode *inode)
 	struct brkfs_inode copy = *inode;
 
 	copy.i_checksum = 0;
-	return inode->i_checksum ==
-	       brkfs_crc32c(0, &copy, sizeof(copy));
+	return inode->i_checksum == brkfs_crc32c(0, &copy, sizeof(copy));
 }
 
 static inline void brkfs_dir_set_checksum(void *buf, uint32_t block_size)
@@ -174,12 +172,10 @@ static inline void brkfs_dir_set_checksum(void *buf, uint32_t block_size)
 
 static inline bool brkfs_dir_checksum_ok(const void *buf, uint32_t block_size)
 {
-	uint32_t stored =
-		*(const uint32_t *)((const uint8_t *)buf + block_size -
-				    BRKFS_DIR_CSUM_SIZE);
+	uint32_t stored = *(const uint32_t *)((const uint8_t *)buf +
+					      block_size - BRKFS_DIR_CSUM_SIZE);
 
-	return stored ==
-	       brkfs_crc32c(0, buf, block_size - BRKFS_DIR_CSUM_SIZE);
+	return stored == brkfs_crc32c(0, buf, block_size - BRKFS_DIR_CSUM_SIZE);
 }
 
 #endif
