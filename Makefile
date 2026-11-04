@@ -1,7 +1,6 @@
-CFLAGS := -Wall -Wextra -Werror -Wno-unused-parameter
-CFLAGS += -O2
-CFLAGS += -std=gnu11
-CFLAGS += -MMD -MP
+HOSTCC ?= cc
+
+HOST_CFLAGS += -Wall -Wextra -Werror -O2 -std=gnu11 -MMD -MP -DNDEBUG
 
 BRKFS := brkfs
 
@@ -10,10 +9,13 @@ BRKFS_OBJS := main.o mkfs.o info.o cp.o ls.o cat.o check.o common.o
 all: $(BRKFS)
 
 $(BRKFS): $(BRKFS_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(HOSTCC) $(HOST_CFLAGS) -o $@ $^
+
+%.o: %.c
+	$(HOSTCC) $(HOST_CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f $(BRKFS) mkfs.brkfs cp.brkfs ls.brkfs cat.brkfs *.o *.d
+	rm -f $(BRKFS) *.o *.d
 
 -include $(wildcard *.d)
 
