@@ -1,0 +1,72 @@
+#!/bin/sh
+#
+# Enforce Conventional Commits for non-merge commits.
+#
+# Enable this hook with:
+#   git config core.hooksPath .githooks
+# or:
+#   make hooks
+
+set -eu
+
+msg_file=${1:?missing commit message file}
+
+msg=$(git stripspace --strip-comments <"$msg_file")
+subject=$(printf '%s\n' "$msg" | sed -n '1p')
+body=$(printf '%s\n' "$msg" | sed -n '2,$p')
+
+# Merge commits, git revert messages, and autosquash markers are exempt.
+case "$subject" in
+Merge\ * | Revert\ \"*\" | fixup!\ * | squash!\ * | amend!\ *)
+	exit 0
+	;;
+esac
+
+fail()
+{
+	printf 'commit-msg: %s\n\n' "$*" >&2
+	cat >&2 <<'EOF'
+Expected Conventional Commits format:
+
+  <type>(<scope>): <description>
+
+Allowed types:
+  feat, fix, refactor, chore, docs, build, perf, test, style, ci, revert
+
+Rules:
+  - scope is optional and must be lowercase
+  - description must be non-empty
+  - subject must be at most 72 characters
+  - subject must not end with a period
+
+Examples:
+  feat(mm): add copy-on-write support
+  fix(fs): correct the getdents directory offset
+  refactor(dev): split the device core from board drivers
+  docs: update README
+EOF
+	exit 1
+}
+
+[ -n "$subject" ] || fail "empty commit message"
+
+pattern='^(feat|fix|refactor|chore|docs|build|perf|test|style|ci|revert)(\([a-z0-9][a-z0-9._/,-]*\))?!?: .+$'
+printf '%s\n' "$subject" | grep -Eq "$pattern" ||
+	fail "invalid subject: $subject"
+
+[ "${#subject}" -le 72 ] ||
+	fail "subject is ${#subject} characters (maximum is 72): $subject"
+
+case "$subject" in
+*.)
+	fail "subject must not end with a period: $subject"
+	;;
+esac
+
+if [ -n "$body" ]; then
+	first_body=$(printf '%s\n' "$body" | sed -n '1p')
+	[ -z "$first_body" ] ||
+		fail "separate the subject and body with a blank line"
+fi
+
+exit 0

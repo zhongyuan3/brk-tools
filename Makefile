@@ -14,9 +14,13 @@ $(BRKFS): $(BRKFS_OBJS)
 %.o: %.c
 	$(HOSTCC) $(HOST_CFLAGS) -c -o $@ $<
 
+hooks:
+	@git config core.hooksPath .githooks
+	@echo "  HOOK    core.hooksPath=.githooks"
+
 clean:
 	rm -f $(BRKFS) *.o *.d
 
 -include $(wildcard *.d)
 
-.PHONY: all clean
+.PHONY: all clean hooks
