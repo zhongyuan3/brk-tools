@@ -28,6 +28,8 @@ struct mkfs_args {
 	uint32_t inode_size;
 	uint32_t block_count;
 	uint32_t inode_count;
+	uint32_t owner_uid;
+	uint32_t owner_gid;
 	char label[64];
 	int imgfd;
 };
@@ -48,6 +50,8 @@ static noreturn void print_help(enum tool_mode mode, int exit_code)
 		"\t-I <count>      Inodes count\n"
 		"\t-i <size>       Inode size (at least %d bytes, must be power of 2, maximum %d bytes)\n"
 		"\t-L <label>      Volume label (at most %d characters)\n"
+		"\t--uid <uid>     Owner uid stamped on created inodes (default 0)\n"
+		"\t--gid <gid>     Owner gid stamped on created inodes (default 0)\n"
 		"\t--help          Show this help message and exit\n"
 		"\t--version       Show version information and exit\n",
 		get_prog_name(), what, BRKFS_MIN_BLOCK_SIZE,
@@ -113,6 +117,16 @@ static void parse_args(struct mkfs_args *args, int argc, char *argv[],
 			if (strlen(argv[i + 1]) >= sizeof(args->label))
 				die_arg("label too long: %s", argv[i + 1]);
 			strcpy(args->label, argv[++i]);
+		} else if (!strcmp(argv[i], "--uid")) {
+			if (i + 1 >= argc)
+				die_arg("missing uid for --uid");
+			args->owner_uid =
+				parse_u32_arg(argv[++i], "owner uid");
+		} else if (!strcmp(argv[i], "--gid")) {
+			if (i + 1 >= argc)
+				die_arg("missing gid for --gid");
+			args->owner_gid =
+				parse_u32_arg(argv[++i], "owner gid");
 		} else {
 			die_arg("unknown option: %s", argv[i]);
 		}
@@ -251,6 +265,8 @@ static void init_ctx(struct mkfs_args *args, struct brkfs_ctx *ctx)
 	ctx->max_mnt_count = 30;
 	ctx->mtime = (uint32_t)time(NULL);
 	ctx->lastcheck = ctx->mtime;
+	ctx->owner_uid = args->owner_uid;
+	ctx->owner_gid = args->owner_gid;
 	generate_uuid(ctx->uuid);
 	memcpy(ctx->label, args->label, sizeof(ctx->label));
 	ctx->inode_bitmap_bno = inode_bitmap_bno;
@@ -295,7 +311,7 @@ int cmd_mkfs(int argc, char *argv[])
 	clear_metadata(&ctx);
 
 	struct brkfs_inode inode;
-	alloc_dir_inode(&ctx, &inode, 0777, BRKFS_ROOT_INO, 0);
+	alloc_dir_inode(&ctx, &inode, 0755, BRKFS_ROOT_INO, 0);
 	if (inode.i_ino != BRKFS_ROOT_INO)
 		die_prog("root inode number is not %u", BRKFS_ROOT_INO);
 

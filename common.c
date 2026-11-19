@@ -527,8 +527,8 @@ void alloc_inode(struct brkfs_ctx *ctx, struct brkfs_inode *inode,
 	inode->i_ctime_nsec = nsec;
 	inode->i_mtime = sec;
 	inode->i_mtime_nsec = nsec;
-	inode->i_uid = (uint32_t)getuid();
-	inode->i_gid = (uint32_t)getgid();
+	inode->i_uid = ctx->owner_uid;
+	inode->i_gid = ctx->owner_gid;
 	inode->i_next_orphan = 0;
 	inode->i_checksum = 0;
 	memset(inode->i_block, 0, sizeof(inode->i_block));
@@ -1069,7 +1069,7 @@ uint32_t resolve_path(struct brkfs_ctx *ctx, const char *path, unsigned flags,
 					}
 					struct brkfs_inode newdir;
 
-					alloc_dir_inode(ctx, &newdir, 0777, cur,
+					alloc_dir_inode(ctx, &newdir, 0755, cur,
 							0);
 					add_dir_entry(ctx, cur, tok, DT_DIR,
 						      newdir.i_ino);

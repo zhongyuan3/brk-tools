@@ -39,6 +39,10 @@ struct brkfs_ctx {
 	uint32_t inode_table_blocks;
 	uint32_t first_data_bno;
 	uint32_t data_block_count;
+	/* Owner stamped on inodes created by the tool; root by default so
+	 * that built rootfs images do not inherit the builder's uid/gid. */
+	uint32_t owner_uid;
+	uint32_t owner_gid;
 };
 
 #define BRKFS_VERSION "0.0.1"

@@ -225,8 +225,8 @@ static void list_dir(struct brkfs_ctx *ctx, uint32_t dir_ino, bool long_fmt,
 
 			read_inode(ctx, &chi);
 			mode_str(mstr, chi.i_mode);
-			printf("%8u %s %8u %s\n", d->ino, mstr, chi.i_size,
-			       d->name);
+			printf("%8u %s %u:%u %8u %s\n", d->ino, mstr,
+			       chi.i_uid, chi.i_gid, chi.i_size, d->name);
 		} else {
 			printf("%s\n", d->name);
 		}

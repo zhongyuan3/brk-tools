@@ -20,6 +20,10 @@ struct cp_args {
 	const char *image;
 	bool recursive;
 	bool parents;
+	bool have_uid;
+	bool have_gid;
+	uint32_t owner_uid;
+	uint32_t owner_gid;
 	int imgfd;
 };
 
@@ -35,6 +39,8 @@ static noreturn void print_help(int exit_code)
 		"Options:\n"
 		"  -r, --recursive   Copy directories recursively\n"
 		"  -p, --parents     Create missing destination parent directories\n"
+		"      --uid <uid>   Owner uid stamped on created inodes (default 0)\n"
+		"      --gid <gid>   Owner gid stamped on created inodes (default 0)\n"
 		"      --help        Show this help and exit\n",
 		get_prog_name());
 	exit(exit_code);
@@ -65,6 +71,20 @@ static void parse_args(struct cp_args *a, int argc, char *argv[])
 		}
 		if (!strcmp(argv[i], "-p") || !strcmp(argv[i], "--parents")) {
 			a->parents = true;
+			continue;
+		}
+		if (!strcmp(argv[i], "--uid")) {
+			if (i + 1 >= argc)
+				die_arg("missing uid for --uid");
+			a->owner_uid = parse_u32_arg(argv[++i], "owner uid");
+			a->have_uid = true;
+			continue;
+		}
+		if (!strcmp(argv[i], "--gid")) {
+			if (i + 1 >= argc)
+				die_arg("missing gid for --gid");
+			a->owner_gid = parse_u32_arg(argv[++i], "owner gid");
+			a->have_gid = true;
 			continue;
 		}
 		die_arg("unknown option: %s", argv[i]);
@@ -281,6 +301,11 @@ int cmd_cp(int argc, char *argv[])
 		die_prog("source is a directory (use -r or --recursive)");
 
 	open_ctx(args.imgfd, &ctx);
+
+	if (args.have_uid)
+		ctx.owner_uid = args.owner_uid;
+	if (args.have_gid)
+		ctx.owner_gid = args.owner_gid;
 
 	if (args.parents)
 		path_flags |= BRKFS_PATH_CREATE_PARENTS;
